@@ -385,10 +385,10 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 <div class="tab-page active" id="tab-overview">
   <!-- BACKEND: /api/overview/stats -->
   <div class="mrow">
-    <div class="metric mr"><div class="mlbl">Total Login Attempts</div><div class="mval" id="m-attempts">2,841</div><div class="mdlt">+143 in last hour</div></div>
-    <div class="metric mg"><div class="mlbl">Unique Attacker IPs</div><div class="mval">384</div><div class="mdlt">across 19 countries</div></div>
-    <div class="metric mb"><div class="mlbl">Active Sessions</div><div class="mval">127</div><div class="mdlt">avg duration 4.2 min</div></div>
-    <div class="metric me"><div class="mlbl">Commands Logged</div><div class="mval">916</div><div class="mdlt">8 intent categories</div></div>
+    <div class="metric mr"><div class="mlbl">Total Login Attempts</div><div class="mval" id="m-attempts">2,841</div><div class="mdlt" id="m-attempts-sub">+143 in last hour</div></div>
+    <div class="metric mg"><div class="mlbl">Unique Attacker IPs</div><div class="mval" id="m-ips">384</div><div class="mdlt" id="m-ips-sub">across 19 countries</div></div>
+    <div class="metric mb"><div class="mlbl">Active Sessions</div><div class="mval" id="m-sessions">127</div><div class="mdlt" id="m-sessions-sub">avg duration 4.2 min</div></div>
+    <div class="metric me"><div class="mlbl">Commands Logged</div><div class="mval" id="m-commands">916</div><div class="mdlt" id="m-commands-sub">8 intent categories</div></div>
   </div>
   <div class="g21">
     <div class="panel">
@@ -446,10 +446,10 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 <!-- ────────────────── ATTACK FEED ────────────────── -->
 <div class="tab-page" id="tab-feed">
   <div class="mrow"><!-- BACKEND: /api/feed/stats -->
-    <div class="metric mr"><div class="mlbl">Connections / Hour</div><div class="mval">143</div><div class="mdlt">peak 187 at 02:00 UTC</div></div>
-    <div class="metric mg"><div class="mlbl">Unique Usernames</div><div class="mval">512</div><div class="mdlt">wordlist spray pattern</div></div>
-    <div class="metric mb"><div class="mlbl">Unique Passwords</div><div class="mval">2,104</div><div class="mdlt">rockyou variants detected</div></div>
-    <div class="metric me"><div class="mlbl">Files Uploaded</div><div class="mval">7</div><div class="mdlt">3 confirmed malware</div></div>
+    <div class="metric mr"><div class="mlbl">Connections / Hour</div><div class="mval" id="fd-conns">143</div><div class="mdlt" id="fd-conns-sub">peak 187 at 02:00 UTC</div></div>
+    <div class="metric mg"><div class="mlbl">Unique Usernames</div><div class="mval" id="fd-users">512</div><div class="mdlt">wordlist spray pattern</div></div>
+    <div class="metric mb"><div class="mlbl">Unique Passwords</div><div class="mval" id="fd-passes">2,104</div><div class="mdlt">rockyou variants detected</div></div>
+    <div class="metric me"><div class="mlbl">Files Uploaded</div><div class="mval" id="fd-files">7</div><div class="mdlt">3 confirmed malware</div></div>
   </div>
 
   <!-- ── SEARCH & FILTER BAR ── -->
@@ -637,9 +637,9 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 <div class="tab-page" id="tab-viz">
   <!-- BACKEND: all charts from /api/viz/* -->
   <div class="viz-stat-row">
-    <div class="vstat"><div class="vstat-v" style="color:var(--crimson-bright)">2,841</div><div class="vstat-l">Total Attempts</div></div>
-    <div class="vstat"><div class="vstat-v" style="color:var(--gold-text)">384</div><div class="vstat-l">Unique IPs</div></div>
-    <div class="vstat"><div class="vstat-v" style="color:var(--azure-text)">916</div><div class="vstat-l">Commands</div></div>
+    <div class="vstat"><div class="vstat-v" style="color:var(--crimson-bright)" id="vz-attacks">2,841</div><div class="vstat-l">Total Attempts</div></div>
+    <div class="vstat"><div class="vstat-v" style="color:var(--gold-text)" id="vz-ips">384</div><div class="vstat-l">Unique IPs</div></div>
+    <div class="vstat"><div class="vstat-v" style="color:var(--azure-text)" id="vz-cmds">916</div><div class="vstat-l">Commands</div></div>
   </div>
   <div class="viz-grid">
     <div class="panel"><div class="ph"><div class="pa"></div><span class="pt">Attack Volume — 24 Hour Heatmap</span></div><div class="pb"><div class="chart-wrap" style="height:180px"><canvas id="v-timeline"></canvas></div></div></div>
@@ -1130,6 +1130,371 @@ function initVZ(){
 
 /* init overview on load */
 window.addEventListener('DOMContentLoaded',function(){setTimeout(function(){initOV();window._ov=true},80)});
+</script>
+<script>
+/* COWRIE REAL DATA */
+const API = 'http://localhost:5000';
+
+async function apiGet(path) {
+  try {
+    const r = await fetch(API + path);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch(e) {
+    console.warn('[API] Failed:', path, e.message);
+    return null;
+  }
+}
+
+function updateChart(chartId, newLabels, newData) {
+  const canvas = document.getElementById(chartId);
+  if (!canvas) return;
+  const ch = Chart.getChart(canvas);
+  if (!ch) return;
+  if (newLabels) ch.data.labels = newLabels;
+  ch.data.datasets[0].data = newData;
+  ch.update('none');
+}
+
+async function loadOverview() {
+  const d = await apiGet('/api/overview');
+  if (!d) return;
+  const ea = document.getElementById('m-attempts');
+  const ei = document.getElementById('m-ips');
+  const es = document.getElementById('m-sessions');
+  const ec = document.getElementById('m-commands');
+  const sa = document.getElementById('m-attempts-sub');
+  const si = document.getElementById('m-ips-sub');
+  const ss = document.getElementById('m-sessions-sub');
+  const sc = document.getElementById('m-commands-sub');
+  if (ea) ea.textContent = Number(d.total_attacks).toLocaleString();
+  if (ei) ei.textContent = Number(d.unique_ips).toLocaleString();
+  if (es) es.textContent = Number(d.total_sessions).toLocaleString();
+  if (ec) ec.textContent = Number(d.total_commands).toLocaleString();
+  if (sa) sa.textContent = 'peak ' + d.peak_value + ' at ' + d.peak_hour;
+  if (si) si.textContent = 'unique attackers detected';
+  if (ss) ss.textContent = d.files_downloaded + ' files downloaded';
+  if (sc) sc.textContent = 'across all sessions';
+}
+
+async function loadOverviewCharts() {
+  const tl = await apiGet('/api/timeline');
+  const pw = await apiGet('/api/passwords');
+  const at = await apiGet('/api/attacktypes');
+  if (tl) updateChart('ch-timeline', tl.labels, tl.data);
+  if (pw) updateChart('ch-pw', pw.labels, pw.data);
+  if (at) {
+    const c = document.getElementById('ch-donut');
+    if (c) { const ch = Chart.getChart(c); if (ch) { ch.data.labels = at.labels; ch.data.datasets[0].data = at.data; ch.update('none'); } }
+  }
+}
+
+async function loadFeed() {
+  const feed_data = await apiGet('/api/feed');
+  if (!feed_data || feed_data.length === 0) return;
+  const container = document.getElementById('live-feed');
+  if (!container) return;
+  container.innerHTML = '';
+  feed_data.slice(0, 12).forEach(function(item) {
+    const row = document.createElement('div');
+    row.className = 'fr';
+    const sp1 = document.createElement('span'); sp1.className = 'ft'; sp1.textContent = item.time;
+    const sp2 = document.createElement('span'); sp2.className = 'fi'; sp2.textContent = item.ip;
+    const sp3 = document.createElement('span'); sp3.className = 'fe'; sp3.textContent = item.detail;
+    const sp4 = document.createElement('span'); sp4.className = 'badge ' + item.badge; sp4.textContent = item.badge_text;
+    row.appendChild(sp1); row.appendChild(sp2); row.appendChild(sp3); row.appendChild(sp4);
+    container.appendChild(row);
+  });
+  const ts = document.getElementById('feed-ts');
+  if (ts) ts.textContent = 'updated ' + new Date().toTimeString().slice(0,5);
+}
+
+async function loadTopIPs() {
+  const ips = await apiGet('/api/ips/top');
+  if (!ips || ips.length === 0) return;
+  const container = document.getElementById('ip-list');
+  if (!container) return;
+  const maxCt = ips[0].count || 1;
+  container.innerHTML = '';
+  ips.forEach(function(item) {
+    const ratio = item.count / maxCt;
+    const color = ratio > 0.7 ? 'var(--crimson-bright)' : ratio > 0.4 ? 'var(--gold-text)' : 'var(--ivory2)';
+    const row = document.createElement('div'); row.className = 'fr';
+    const sp1 = document.createElement('span'); sp1.className = 'fi'; sp1.textContent = item.ip;
+    const sp2 = document.createElement('span'); sp2.className = 'fe'; sp2.textContent = item.info;
+    const sp3 = document.createElement('span'); sp3.style.cssText = 'font-family:var(--ff-m);font-size:11px;font-weight:600;color:' + color; sp3.textContent = item.count;
+    row.appendChild(sp1); row.appendChild(sp2); row.appendChild(sp3);
+    container.appendChild(row);
+  });
+}
+
+async function loadCredentials() {
+  const creds = await apiGet('/api/credentials');
+  if (!creds || creds.length === 0) return;
+  const container = document.getElementById('cred-list');
+  if (!container) return;
+  container.innerHTML = '';
+  creds.forEach(function(item, i) {
+    const barColor = i === 0 ? 'var(--crimson)' : i < 3 ? 'var(--gold)' : 'var(--ivory4)';
+    const row = document.createElement('div'); row.className = 'credrow';
+    row.dataset.user = item.user; row.dataset.pass = item.pass; row.dataset.ct = item.count;
+    const sp1 = document.createElement('span'); sp1.className = 'credkv'; sp1.textContent = item.pair;
+    const bar = document.createElement('div'); bar.className = 'mb-w';
+    const fill = document.createElement('div'); fill.className = 'mb-f'; fill.style.cssText = 'width:' + item.pct + '%;background:' + barColor;
+    bar.appendChild(fill);
+    const sp2 = document.createElement('span'); sp2.className = 'credct'; sp2.textContent = item.count;
+    row.appendChild(sp1); row.appendChild(bar); row.appendChild(sp2);
+    container.appendChild(row);
+  });
+  const lbl = document.getElementById('cred-count-lbl');
+  if (lbl) lbl.textContent = 'showing ' + creds.length + ' entries';
+}
+
+async function loadDurationChart() {
+  const d = await apiGet('/api/sessions/durations');
+  if (d) updateChart('ch-duration', d.labels, d.data);
+}
+
+async function loadAPS() {
+  const aps = await apiGet('/api/behavior/aps');
+  if (!aps || aps.length === 0) return;
+  const container = document.querySelector('#tab-behavior .apslist');
+  if (!container) return;
+  const cmap = { crimson:{bar:'var(--crimson)',txt:'var(--crimson-bright)'}, gold:{bar:'var(--gold)',txt:'var(--gold-text)'}, azure:{bar:'var(--azure)',txt:'var(--azure-text)'}, emerald:{bar:'var(--emerald-text)',txt:'var(--emerald-text)'} };
+  container.innerHTML = '';
+  aps.forEach(function(item) {
+    const c = cmap[item.color] || cmap.azure;
+    const row = document.createElement('div'); row.className = 'apsrow';
+    const sp1 = document.createElement('span'); sp1.className = 'apsip'; sp1.textContent = item.ip;
+    const bar = document.createElement('div'); bar.className = 'mb-w';
+    const fill = document.createElement('div'); fill.className = 'mb-f'; fill.style.cssText = 'width:' + item.pct + '%;background:' + c.bar;
+    bar.appendChild(fill);
+    const sp2 = document.createElement('span'); sp2.className = 'apssc'; sp2.style.color = c.txt; sp2.textContent = item.aps;
+    const sp3 = document.createElement('span'); sp3.className = 'apsty'; sp3.style.color = c.txt; sp3.textContent = item.type;
+    row.appendChild(sp1); row.appendChild(bar); row.appendChild(sp2); row.appendChild(sp3);
+    container.appendChild(row);
+  });
+}
+
+async function loadCommands() {
+  const cmds = await apiGet('/api/commands/classified');
+  if (!cmds || cmds.length === 0) return;
+  const container = document.querySelector('#tab-behavior .cmdlist');
+  if (!container) return;
+  const cb = {RECON:'bb','SYS-DISCO':'bb',MALWARE:'br',PERSIST:'br',PRIVESC:'ba',LATERAL:'ba',CLEANUP:'be',OTHER:'bm'};
+  container.innerHTML = '';
+  cmds.forEach(function(item) {
+    const row = document.createElement('div'); row.className = 'cmditem';
+    const sp1 = document.createElement('span'); sp1.className = 'cmdcat badge ' + (cb[item.category] || 'bm'); sp1.textContent = item.category;
+    const sp2 = document.createElement('span'); sp2.className = 'cmdtxt'; sp2.textContent = item.top_command;
+    const sp3 = document.createElement('span'); sp3.className = 'cmdn'; sp3.textContent = 'x' + item.count;
+    row.appendChild(sp1); row.appendChild(sp2); row.appendChild(sp3);
+    container.appendChild(row);
+  });
+}
+
+async function loadSessionList() {
+  const sessions = await apiGet('/api/sessions/list');
+  if (!sessions || sessions.length === 0) return;
+  const select = document.getElementById('sess-select');
+  if (!select) return;
+  select.innerHTML = '';
+  sessions.forEach(function(s) {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.ip + ' — ' + s.type + ' — APS ' + s.aps;
+    select.appendChild(opt);
+  });
+  if (sessions.length > 0) loadSessionReal(sessions[0].id);
+}
+
+async function loadSessionReal(sid) {
+  const d = await apiGet('/api/sessions/' + sid);
+  if (!d) return;
+  const tb = document.getElementById('sess-type-badge');
+  const ab = document.getElementById('sess-aps-badge');
+  const db = document.getElementById('sess-dur-badge');
+  const ti = document.getElementById('narr-title');
+  const bo = document.getElementById('narr-body');
+  if (tb) tb.textContent = d.type;
+  if (ab) ab.textContent = 'APS: ' + d.aps;
+  if (db) db.textContent = 'DURATION: ' + d.duration;
+  if (ti) ti.textContent = 'Attack Session Report — ' + d.ip;
+  if (bo && d.events && d.events.length > 0) {
+    bo.innerHTML = '';
+    d.events.forEach(function(ev) {
+      const div = document.createElement('div');
+      const ts = document.createElement('span'); ts.className = 'nts'; ts.textContent = ev.time;
+      const txt = document.createElement('span'); txt.className = 'nev ' + ev.cls; txt.textContent = ev.event;
+      div.appendChild(ts); div.appendChild(txt);
+      bo.appendChild(div);
+    });
+    const conc = document.createElement('div'); conc.className = 'nconc';
+    conc.innerHTML = '<strong>Summary:</strong> ' + d.ip + ' — ' + d.logins + ' logins, ' + d.commands + ' commands, ' + d.duration + '. APS: ' + d.aps + ' (' + d.type + ')';
+    bo.appendChild(conc);
+  }
+}
+
+window.loadSession = function(val) { loadSessionReal(parseInt(val)); };
+
+async function loadIntelTable() {
+  const intel = await apiGet('/api/intel/ips');
+  if (!intel || intel.length === 0) return;
+  const tbody = document.querySelector('#tab-intel .itbl tbody');
+  if (!tbody) return;
+  const cb = {PERSISTENT:'br','BRUTE-FORCE':'bg','AUTO-SCAN':'bb',SCANNER:'bm'};
+  tbody.innerHTML = '';
+  intel.forEach(function(item) {
+    const cc = item.confidence > 70 ? 'var(--crimson-bright)' : item.confidence > 40 ? 'var(--gold-text)' : 'var(--ivory2)';
+    const bc = item.confidence > 70 ? 'var(--crimson)' : item.confidence > 40 ? 'var(--gold)' : 'var(--ivory4)';
+    const tr = document.createElement('tr');
+    const cells = [
+      {txt: item.ip,         style: 'font-family:var(--ff-m);color:var(--azure-text)'},
+      {txt: item.country,    style: 'color:var(--ivory2)'},
+      {txt: item.isp,        style: 'color:var(--ivory3)'},
+      {txt: '',              style: '', conf: true, conf_val: item.confidence, conf_color: cc, bar_color: bc},
+      {txt: item.reports,    style: 'font-family:var(--ff-m);color:var(--ivory4)'},
+      {txt: item.last_seen,  style: 'font-family:var(--ff-m);color:var(--ivory4)'},
+      {txt: item.category,   style: '', badge: cb[item.category] || 'bm'}
+    ];
+    cells.forEach(function(cell) {
+      const td = document.createElement('td');
+      if (cell.conf) {
+        const sc = document.createElement('span'); sc.style.cssText = 'font-family:var(--ff-m);font-weight:600;color:' + cell.conf_color; sc.textContent = cell.conf_val;
+        const bar = document.createElement('span'); bar.className = 'rbt';
+        const fill = document.createElement('span'); fill.className = 'rbf'; fill.style.cssText = 'width:' + cell.conf_val + '%;background:' + cell.bar_color + ';display:block;height:100%';
+        bar.appendChild(fill); td.appendChild(sc); td.appendChild(bar);
+      } else if (cell.badge) {
+        const sp = document.createElement('span'); sp.className = 'badge ' + cell.badge; sp.textContent = cell.txt;
+        td.appendChild(sp);
+      } else {
+        td.style.cssText = cell.style; td.textContent = cell.txt;
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadVizCharts() {
+  const tl = await apiGet('/api/timeline');
+  const at = await apiGet('/api/attacktypes');
+  const geo = await apiGet('/api/viz/geo');
+  const cmdcat = await apiGet('/api/viz/cmdcat');
+  const pw = await apiGet('/api/passwords');
+  if (tl) { updateChart('v-timeline', tl.labels, tl.data); }
+  if (pw) { updateChart('v-pw', pw.labels, pw.data); }
+  if (geo) { updateChart('v-geo', geo.labels, geo.data); }
+  if (cmdcat) {
+    const c = document.getElementById('v-cmdcat');
+    if (c) { const ch = Chart.getChart(c); if (ch) { ch.data.labels = cmdcat.labels; ch.data.datasets[0].data = cmdcat.data; ch.update('none'); } }
+  }
+  if (at) {
+    const c = document.getElementById('v-donut');
+    if (c) { const ch = Chart.getChart(c); if (ch) { ch.data.labels = at.labels; ch.data.datasets[0].data = at.data; ch.update('none'); } }
+  }
+}
+
+function stopMockFeed() {
+  for (var i = 1; i <= 50; i++) { clearInterval(i); }
+}
+
+function connectSSE() {
+  var src = new EventSource(API + '/api/stream');
+  src.onopen = function() {
+    var dot = document.querySelector('.live-dot');
+    if (dot) { dot.style.background = 'var(--emerald-text)'; dot.style.boxShadow = '0 0 8px var(--emerald-text)'; }
+    console.log('[SSE] connected');
+  };
+  src.onerror = function() {
+    var dot = document.querySelector('.live-dot');
+    if (dot) { dot.style.background = '#555'; dot.style.boxShadow = 'none'; }
+  };
+  src.onmessage = function(e) {
+    try {
+      var ev = JSON.parse(e.data);
+      var feed = document.getElementById('live-feed');
+      if (feed) {
+        var row = document.createElement('div'); row.className = 'fr rnew';
+        var s1 = document.createElement('span'); s1.className = 'ft'; s1.textContent = ev.time;
+        var s2 = document.createElement('span'); s2.className = 'fi'; s2.textContent = ev.ip;
+        var s3 = document.createElement('span'); s3.className = 'fe'; s3.textContent = ev.detail;
+        var s4 = document.createElement('span'); s4.className = 'badge ' + ev.badge; s4.textContent = ev.badge_text;
+        row.appendChild(s1); row.appendChild(s2); row.appendChild(s3); row.appendChild(s4);
+        feed.insertBefore(row, feed.firstChild);
+        while (feed.children.length > 20) { feed.removeChild(feed.lastChild); }
+        var ts = document.getElementById('feed-ts');
+        if (ts) ts.textContent = 'updated ' + ev.time;
+      }
+      var m = document.getElementById('m-attempts');
+      if (m && (ev.type === 'login' || ev.type === 'command')) {
+        var cur = parseInt(m.textContent.replace(/,/g,'')) || 0;
+        m.textContent = (cur + 1).toLocaleString();
+      }
+    } catch(err) {}
+  };
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+  setTimeout(function() {
+    stopMockFeed();
+    loadOverview();
+    loadOverviewCharts();
+    loadFeed();
+    loadTopIPs();
+    loadCredentials();
+    loadDurationChart();
+    loadAPS();
+    loadCommands();
+    loadSessionList();
+    loadIntelTable();
+    loadVizCharts();
+    connectSSE();
+    console.log('[Cowrie] Dashboard loaded with real data');
+/* ── TAB DATA LOADER — load real data when tab is clicked ── */
+(function() {
+  var orig = window.T;
+  window.T = function(id, btn) {
+    orig(id, btn);
+    if (id === 'feed')      { loadFeedTabMetrics(); loadTopIPs(); loadCredentials(); loadDurationChart(); }
+    if (id === 'behavior')  { loadAPS(); loadCommands(); }
+    if (id === 'intel')     { loadIntelTable(); }
+    if (id === 'narrative') { loadSessionList(); }
+    if (id === 'viz')       { loadVizCharts(); loadVizStats(); }
+  };
+})();
+
+async function loadFeedTabMetrics() {
+  const d = await apiGet('/api/overview');
+  if (!d) return;
+  const fc = document.getElementById('fd-conns');
+  const fu = document.getElementById('fd-users');
+  const fp = document.getElementById('fd-passes');
+  const ff = document.getElementById('fd-files');
+  const fs = document.getElementById('fd-conns-sub');
+  if (fc) fc.textContent = d.total_attacks.toLocaleString();
+  if (fu) fu.textContent = d.unique_ips.toLocaleString();
+  if (fp) {
+    const pw = await apiGet('/api/passwords');
+    if (pw) fp.textContent = pw.data.reduce(function(a,b){return a+b;}, 0).toLocaleString();
+  }
+  if (ff) ff.textContent = d.files_downloaded;
+  if (fs) fs.textContent = 'peak ' + d.peak_value + ' at ' + d.peak_hour;
+}
+
+async function loadVizStats() {
+  const d = await apiGet('/api/overview');
+  if (!d) return;
+  const va = document.getElementById('vz-attacks');
+  const vi = document.getElementById('vz-ips');
+  const vc = document.getElementById('vz-cmds');
+  if (va) va.textContent = d.total_attacks.toLocaleString();
+  if (vi) vi.textContent = d.unique_ips.toLocaleString();
+  if (vc) vc.textContent = d.total_commands.toLocaleString();
+}
+
+  }, 400);
+});
 </script>
 </body>
 </html>
